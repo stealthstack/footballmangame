@@ -49,6 +49,7 @@ free_agent_pool = []
 worst_teams_after_8_games = []
 
 INITIAL_FREE_AGENTS = 5
+POSITION_COUNTS = {"QB": 1, "RB": 1, "WR": 2, "DL": 2, "Safety": 1, "Kicker": 1}
 
 # Define ANSI color codes for traits
 TRAIT_COLORS = {
@@ -119,7 +120,8 @@ class Player:
         self.silver_medals = 0
         self.traits = {}
         self.home = False
-        self.nfl_team = None  # Add missing attribute
+        self.nfl_team = None
+        self.hof_news_shown = False
         
     def update_position(self, new_position):
         """Handle position changes and trait management"""
@@ -196,6 +198,11 @@ class Team:
         self.ties = 0
         self.games_played = 0
         self.trophies = []
+        self.coach_name = generate_coach_name()
+        self.current_streak = 0
+        self.playoff_bubble_shown = False
+        self.playoff_secured_shown = False
+        self.rebrand_immunity = False
         self.historic_wins = 0
         self.historic_losses = 0
         self.historic_ties = 0
@@ -254,6 +261,13 @@ class Team:
                 return player
         return None
 
+    def get_spokesperson_info(self):
+        """Returns (name, title) — 50/50 between captain and coach when both exist."""
+        captain = self.get_team_captain()
+        if captain and random.random() < 0.5:
+            return captain.player_name, "Team Captain"
+        return self.coach_name, "Coach"
+
     def assign_team_captain(self, new_captain):
         """Assign team captain role to a player"""
         # Remove captain from current captain if exists
@@ -271,6 +285,9 @@ class Team:
         print(f"{self.name} has been awarded the {trophy_name}!")
 
 # Utility functions
+def generate_coach_name():
+    return f"{random.choice(PLAYER_NAMES)} {random.choice(PLAYER_NAMES)}"
+
 def generate_random_name(team):
     attempts = 0
     while attempts < 100:
@@ -368,13 +385,18 @@ def sign_free_agent(team, preferred_position=None):
             else:
                 new_position = preferred_position
 
-            # Find worst player at this position to replace
+            # If position is under its expected headcount, fill the vacancy
             position_players = [p for p in team.players if p.position == new_position]
-            if position_players:
-                worst_player = min(position_players, key=lambda p: p.get_effective_score())
-            else:
-                # If no players at this position, find overall worst
-                worst_player = min(team.players, key=lambda p: p.get_effective_score())
+            expected = POSITION_COUNTS.get(new_position, 1)
+            if len(position_players) < expected:
+                player.update_position(new_position)
+                team.add_player(player)
+                free_agent_pool.remove(player)
+                print(f"Signed {player.player_name} as {new_position} (filling vacant slot)!")
+                return True
+
+            # Otherwise find the worst player at this position to replace
+            worst_player = min(position_players, key=lambda p: p.get_effective_score())
 
             print(f"\nThis will replace {worst_player.player_name} (Score: {worst_player.get_effective_score()})")
 
@@ -516,6 +538,18 @@ def generate_round_robin_schedule(teams):
     
     return schedule
 
+def calculate_win_probability(my_score, opp_score, my_team_is_home):
+    """Exact probability based on roll ranges: home 51-150, away 1-100."""
+    G = (opp_score - my_score) - 50 if my_team_is_home else (opp_score - my_score) + 50
+    if G >= 99:
+        return 0.0
+    if G >= 0:
+        return (99 - G) * (100 - G) / 20000.0
+    G_prime = -G - 1
+    if G_prime >= 99:
+        return 1.0
+    return 1.0 - (99 - G_prime) * (100 - G_prime) / 20000.0
+
 def simulate_game(home_team, away_team, must_have_winner=False):
     """Simulate a game between two teams"""
     # Set home/away status
@@ -543,31 +577,41 @@ def simulate_game(home_team, away_team, must_have_winner=False):
             away_team.losses += 1
             home_team.games_played += 1
             away_team.games_played += 1
+            home_team.current_streak = home_team.current_streak + 1 if home_team.current_streak > 0 else 1
+            away_team.current_streak = away_team.current_streak - 1 if away_team.current_streak < 0 else -1
             return home_team, away_team
         elif home_total < away_total:
             away_team.wins += 1
             home_team.losses += 1
             home_team.games_played += 1
             away_team.games_played += 1
+            away_team.current_streak = away_team.current_streak + 1 if away_team.current_streak > 0 else 1
+            home_team.current_streak = home_team.current_streak - 1 if home_team.current_streak < 0 else -1
             return away_team, home_team
         elif not must_have_winner:
             home_team.games_played += 1
             away_team.games_played += 1
             home_team.ties += 1
             away_team.ties += 1
+            home_team.current_streak = 0
+            away_team.current_streak = 0
             return None, None
-    
+
     # If we reach max attempts and must have winner, pick winner based on team score
     home_team.games_played += 1
     away_team.games_played += 1
-    
+
     if home_team.get_total_score() >= away_team.get_total_score():
         home_team.wins += 1
         away_team.losses += 1
+        home_team.current_streak = home_team.current_streak + 1 if home_team.current_streak > 0 else 1
+        away_team.current_streak = away_team.current_streak - 1 if away_team.current_streak < 0 else -1
         return home_team, away_team
     else:
         away_team.wins += 1
         home_team.losses += 1
+        away_team.current_streak = away_team.current_streak + 1 if away_team.current_streak > 0 else 1
+        home_team.current_streak = home_team.current_streak - 1 if home_team.current_streak < 0 else -1
         return away_team, home_team
 
 def generate_highlight(winner_team, loser_team, is_championship=False, show_improvements=False):
@@ -681,7 +725,7 @@ def draft_player(player, team):
     drafted_team = random.choice(nfl_teams)
     player.nfl_team = drafted_team
     player.temp_retrieved = False
-    print(f"Player {player.player_name} of the {team.name} has been drafted to the NFL team {drafted_team}!")
+    print(f"{player.position} {str(player)} of the {team.name} has been drafted to the NFL team {drafted_team}!")
     
     # If the drafted player was team captain, announce vacancy
     if was_captain:
@@ -714,9 +758,10 @@ def free_agent_draft(teams):
 def draft_players_if_applicable(teams):
     """Handle player drafting and replacements - CONSOLIDATED VERSION"""
     global drafted_players, free_agent_pool
-    
-    human_team = teams[0]  # Assuming human controls first team
-    
+
+    human_team = teams[0]
+    signings = []  # (drafted_player, new_player, team)
+
     for team in teams:
         players_to_draft = [player for player in team.players if player.score >= 125]
 
@@ -729,8 +774,7 @@ def draft_players_if_applicable(teams):
             if team == human_team:
                 print(f"\n🚨 EMERGENCY SIGNING: {player.player_name} was drafted to the NFL!")
                 print(f"Position needing replacement: {replacement_position}")
-                
-                # Ask user if they want to sign a free agent; validate input
+
                 while True:
                     choice = input("\nSign a free agent? (y/n): ").strip().lower()
                     if choice in ("y", "n"):
@@ -738,19 +782,25 @@ def draft_players_if_applicable(teams):
                     print("Please enter 'y' or 'n'.")
 
                 if choice == 'y':
+                    before = set(p.player_name for p in team.players)
                     if sign_free_agent(team, replacement_position):
+                        new_player = next((p for p in team.players if p.player_name not in before), None)
+                        signings.append((player, new_player, team))
                         continue
-                
-                # Fallback to creating new player
+
                 new_player = add_random_player_to_team(team, replacement_position)
                 team.add_player(new_player)
                 print(f"Auto-signed beer league player {new_player.player_name} (Score: {new_player.score})")
-            
+                signings.append((player, new_player, team))
+
             # AI teams automatically sign beer league players
             else:
                 new_player = add_random_player_to_team(team, replacement_position)
                 team.add_player(new_player)
                 print(f"New player {new_player.player_name} has joined the {team} from the local beer league as a {new_player.position}!")
+                signings.append((player, new_player, team))
+
+    return signings
 
 def calculate_league_standings(teams):
     """Display current league standings"""
@@ -870,6 +920,9 @@ def reset_teams_for_new_season(teams):
         team.losses = 0
         team.ties = 0
         team.games_played = 0
+        team.current_streak = 0
+        team.playoff_bubble_shown = False
+        team.playoff_secured_shown = False
 
 
 def identify_worst_teams(teams, num_worst_teams=2):
@@ -961,42 +1014,24 @@ def human_team_improvement(team):
             break
 
 def reassign_team_city(team, teams):
-    # Store the old team information
     old_name = team.name
-    old_first_place = team.first_place_seasons.copy()
-    old_second_place = team.second_place_seasons.copy()
-    
-    # Find available names
+
     existing_team_names = set(t.name for t in teams)
     used_city_names = set(t.name.split()[0] for t in teams)
     used_mascot_names = set(t.name.split()[1] for t in teams)
     used_colors = set(t.color for t in teams)
-    
-    # Create new team identity
+
     new_team = create_random_team(existing_team_names, used_city_names, used_mascot_names, used_colors)
-    
-    # Display rebranding message
-    print(f"\n{old_name} has been bought by another city and is now rebranded!")
-    if old_first_place or old_second_place:
-        print(f"Team achievements being reset:")
-        if old_first_place:
-            print(f" - Former {len(old_first_place)}x champion (Seasons: {', '.join(map(str, old_first_place))})")
-        if old_second_place:
-            print(f" - Former {len(old_second_place)}x runner-up (Seasons: {', '.join(map(str, old_second_place))})")
-    print("Player medals and traits remain unchanged")
-    
-    # Reset team history (but keep players)
+
     team.name = new_team.name
     team.color = new_team.color
+    team.coach_name = generate_coach_name()
+    team.current_streak = 0
     team.first_place_seasons = []
     team.second_place_seasons = []
     team.trophies = []
-    
-    # Players keep their medals and traits - no changes to player objects
-    
-    # Show new team identity
-    print(f"\nThe team is now known as: {team}")
-    team.display_team()
+
+    return old_name, team
 
 def add_player_to_position(team, player):
     possible_positions = ["QB", "RB", "WR", "DL", "Safety", "Kicker"]
@@ -1042,14 +1077,212 @@ def management_menu(team, teams):  # Add teams parameter
         elif choice == "5":
             break
 
+NEWS_QUOTES = {
+    "win_streak": [
+        "We're not surprised. We've been putting in the work.",
+        "The league is starting to notice us. Good.",
+        "Keep your heads down and keep winning. That's all.",
+        "This team has something special. I can feel it.",
+        "We take it one game at a time. Always have.",
+    ],
+    "loss_streak": [
+        "We're going to turn this around. I believe in this team.",
+        "It's been tough, but nobody's quitting in that locker room.",
+        "We need to look at ourselves in the mirror. Starting with me.",
+        "Tough times never last. Only tough people last.",
+        "This is where champions are made — in the hard moments.",
+    ],
+    "player_draft_watch": [
+        "I'm just focused on helping this team win right now.",
+        "That's not something I'm thinking about. My guys need me.",
+        "I let my play do the talking.",
+        "One game at a time. That's all I can control.",
+        "There's still work to do here. That comes first.",
+    ],
+    "player_draft_imminent": [
+        "I've worked my whole life for an opportunity like this.",
+        "Whatever happens, I'll always love this city.",
+        "It's hard not to think about it. I won't lie.",
+        "This team gave me everything. I owe them a championship run first.",
+        "I just want to leave it all on the field while I'm still here.",
+    ],
+    "hall_of_fame": [
+        "Legends don't retire. They just move on.",
+        "I've been around a long time. Players like this don't come around often.",
+        "Buy a ticket and watch closely. You're seeing history.",
+        "There are no words. Just gratitude.",
+    ],
+    "emergency_signing": [
+        "It happened fast. But we're ready.",
+        "Big shoes to fill. We're up for the challenge.",
+        "We wish him well. Now we move on.",
+        "The door closes, another opens. That's this league.",
+        "Nobody panics in that locker room. We have a plan.",
+    ],
+    "rebrand": [
+        "New city, new energy, same hunger.",
+        "The name changes. The work ethic doesn't.",
+        "This city deserves a winner. We're going to give them one.",
+        "Fresh start. That's all this is.",
+        "We're not running from anything. We're running toward something.",
+    ],
+    "playoff_push": [
+        "We need every point from here on out.",
+        "Every game is a playoff game now.",
+        "The math is still in our favor. Barely.",
+        "We didn't come this far to go home early.",
+    ],
+    "playoff_secured": [
+        "We earned our spot. Now we go take something.",
+        "Playoffs were the floor, not the ceiling.",
+        "We're not done. We're just getting started.",
+        "The real season starts now.",
+    ],
+}
+
+def generate_news_headlines(teams, round_counter, season_number, rebrands=None, signings=None):
+    priority = []
+    used_teams = set()
+
+    # 1. Rebrands — unconditional
+    if rebrands:
+        for old_name, team in rebrands:
+            quote = random.choice(NEWS_QUOTES["rebrand"])
+            priority.append((
+                f"🏙️  BREAKING: The {old_name} have relocated! Welcome the {team}.",
+                quote, team.coach_name, "Coach", team.name
+            ))
+            used_teams.add(team.name)
+
+    standings = sorted(teams, key=lambda t: (-t.wins, t.losses, -t.ties))
+    rank_map = {team: i + 1 for i, team in enumerate(standings)}
+
+    # 2. Secured playoff spots — always shown unless emergency signings are happening
+    if round_counter == 13:
+        for team in teams:
+            rank = rank_map[team]
+            if rank <= 6 and team.playoff_bubble_shown and not team.playoff_secured_shown:
+                if not signings:
+                    spokesperson, title = team.get_spokesperson_info()
+                    quote = random.choice(NEWS_QUOTES["playoff_secured"])
+                    priority.append((
+                        f"✅ {team} has secured their playoff spot!",
+                        quote, spokesperson, title, team.name
+                    ))
+                    team.playoff_secured_shown = True
+                    used_teams.add(team.name)
+                # If signings exist, leave playoff_secured_shown=False so it fires next round
+
+    # 3. Emergency signings
+    if signings:
+        for drafted, replacement, team in signings:
+            quote = random.choice(NEWS_QUOTES["emergency_signing"])
+            rep_str = f"{replacement.player_name} ({replacement.score})" if replacement else "a beer league pickup"
+            priority.append((
+                f"📋 {drafted.position} {str(drafted)} has been called up to the {drafted.nfl_team}! {team} signs {rep_str}.",
+                quote, team.coach_name, "Coach", team.name
+            ))
+            used_teams.add(team.name)
+
+    candidates = []
+
+    # Only the single biggest win streak and loss streak earn a headline
+    streak_teams = [t for t in teams if t.current_streak >= 5]
+    if streak_teams:
+        best = max(streak_teams, key=lambda t: t.current_streak)
+        spokesperson, title = best.get_spokesperson_info()
+        candidates.append((
+            f"🔥 The {best} are on a {best.current_streak}-game winning streak!",
+            random.choice(NEWS_QUOTES["win_streak"]), spokesperson, title, best.name
+        ))
+        used_teams.add(best.name)
+
+    skid_teams = [t for t in teams if t.current_streak <= -3]
+    if skid_teams:
+        worst = min(skid_teams, key=lambda t: t.current_streak)
+        spokesperson, title = worst.get_spokesperson_info()
+        candidates.append((
+            f"📉 The {worst} have dropped {abs(worst.current_streak)} straight.",
+            random.choice(NEWS_QUOTES["loss_streak"]), spokesperson, title, worst.name
+        ))
+        used_teams.add(worst.name)
+
+    for team in teams:
+        if team.name in used_teams:
+            continue
+        spokesperson, title = team.get_spokesperson_info()
+
+        for player in team.players:
+            if player.score >= 120 and random.random() < 0.5:
+                quote = random.choice(NEWS_QUOTES["player_draft_imminent"])
+                candidates.append((
+                    f"🚨 DRAFT ALERT: {player.player_name} ({player.score}) could be gone any day now.",
+                    quote, player.player_name, player.position, team.name
+                ))
+                used_teams.add(team.name)
+                break
+            elif 115 <= player.score < 120 and random.random() < 0.3:
+                quote = random.choice(NEWS_QUOTES["player_draft_watch"])
+                candidates.append((
+                    f"👀 DRAFT WATCH: {player.player_name} ({player.score}) is turning heads across the league.",
+                    quote, player.player_name, player.position, team.name
+                ))
+                used_teams.add(team.name)
+                break
+
+        if team.name not in used_teams:
+            rank = rank_map[team]
+            if 7 <= rank <= 9 and not team.playoff_bubble_shown and team.wins < 10 and 8 <= round_counter <= 13:
+                quote = random.choice(NEWS_QUOTES["playoff_push"])
+                candidates.append((
+                    f"⚔️  {team} sitting at #{rank} — right on the playoff cutoff.",
+                    quote, spokesperson, title, team.name
+                ))
+                team.playoff_bubble_shown = True
+                used_teams.add(team.name)
+
+        if team.name not in used_teams:
+            for player in team.players:
+                if "Hall of Fame" in player.traits and not player.hof_news_shown:
+                    quote = random.choice(NEWS_QUOTES["hall_of_fame"])
+                    candidates.append((
+                        f"🏛️  {player.position} {str(player)} walks among legends — inducted into the League Hall of Fame.",
+                        quote, team.coach_name, "Coach", team.name
+                    ))
+                    player.hof_news_shown = True
+                    used_teams.add(team.name)
+                    break
+
+    random.shuffle(candidates)
+    remaining = max(0, 3 - len(priority))
+    return priority + candidates[:remaining]
+
+def display_news(teams, round_counter, season_number, rebrands=None, signings=None):
+    headlines = generate_news_headlines(teams, round_counter, season_number, rebrands, signings)
+    if not headlines:
+        return
+    print(f"\n{'━' * 52}")
+    if len(headlines) > 3:
+        print(f"  📰  EXTRA! EXTRA! — Season {season_number}, Round {round_counter + 1}")
+    else:
+        print(f"  📰  LEAGUE NEWS — Season {season_number}, Round {round_counter + 1}")
+    print(f"{'━' * 52}")
+    for headline, quote, spokesperson, title, team_name in headlines:
+        print(f"\n  {headline}")
+        print(f'  "{quote}"')
+        attribution = f"{title} {spokesperson}" if title else spokesperson
+        print(f"  — {attribution}, {team_name}")
+    print(f"{'━' * 52}")
+
 def main():
-    global teams, drafted_players, free_agent_pool  # Add teams to global declaration
-    free_agent_pool = []  # Replaces cut_players for available players
+    global teams, drafted_players, free_agent_pool
+    free_agent_pool = []
     season_number = 1
     teams = generate_teams()
     drafted_players = []
-    generate_initial_free_agents()  # Initialize free agent pool
+    generate_initial_free_agents()
     all_drafted_players = []
+    worst_teams_previous_season = []
     while True:
         print(f"\nWelcome to Season {season_number}!")
         if season_number > 1:
@@ -1101,6 +1334,13 @@ def main():
             user_opponent.display_team()
             user_opponent.display_record()
 
+            my_team_is_home = (home_team == my_team)
+            win_pct = calculate_win_probability(
+                my_team.get_total_score(),
+                user_opponent.get_total_score(),
+                my_team_is_home
+            )
+            print(f"\nWin probability: {win_pct * 100:.1f}%")
             input("Press Enter to start the game...")
 
             # Simulate the user's game specifically and update the records
@@ -1124,7 +1364,7 @@ def main():
 
             calculate_league_standings(teams)
 
-            draft_players_if_applicable(teams)
+            signings = draft_players_if_applicable(teams)
 
             all_drafted_players.extend(player for player in drafted_players if player not in all_drafted_players)  # Ensure no duplicates
 
@@ -1138,11 +1378,17 @@ def main():
                 improve_low_ranked_teams(teams, all_drafted_players)
                 worst_teams_after_8_games = identify_worst_teams(teams)
 
-            if season_number > 1 and round_counter == 13:
+            rebrands = []
+            if season_number > 2 and round_counter == 14:
                 current_worst_teams = identify_worst_teams(teams, num_worst_teams=2)
                 for team in current_worst_teams:
-                    if team in worst_teams_after_8_games:
-                                            reassign_team_city(team, teams)
+                    if team in worst_teams_previous_season:
+                        old_name, rebranded_team = reassign_team_city(team, teams)
+                        rebrands.append((old_name, rebranded_team))
+                        rebranded_team.rebrand_immunity = True
+                        worst_teams_previous_season.remove(team)
+
+            display_news(teams, round_counter, season_number, rebrands, signings)
 
             round_counter += 1
 
@@ -1186,6 +1432,11 @@ def main():
         semifinal_teams = knockout_round(top_teams, "Quarterfinals")
         final_teams = knockout_round(semifinal_teams, "Semifinals")
         champion = championship_match(final_teams[0], final_teams[1], season_number)
+
+        eligible = [t for t in teams if not t.rebrand_immunity]
+        worst_teams_previous_season = identify_worst_teams(eligible, num_worst_teams=2)
+        for team in teams:
+            team.rebrand_immunity = False
 
         print(f"\nCongratulations to {champion} for winning the Season {season_number} Trophy!")
         input("Press Enter to continue to the next season...")
