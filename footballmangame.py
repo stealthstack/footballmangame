@@ -131,6 +131,8 @@ class Player:
     def update_position(self, new_position):
         """Handle position changes and trait management"""
         if new_position != self.original_position:
+            if "Reformed" in self.traits:
+                self.traits.pop("Reformed")
             if "Problematic" not in self.traits:
                 self.add_trait("Problematic")
         self.position = new_position
