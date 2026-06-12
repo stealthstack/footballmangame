@@ -978,12 +978,15 @@ def cut_and_replace_player(team):
     if not team.players:
         return
     # Identify and cut the worst player
-    worst_player = min(team.players, key=lambda p: p.score)
+    worst_player = min(team.players, key=lambda p: (1 if p.traits else 0, p.score))
     print(f"Cutting worst player {worst_player.player_name} from {team.name}")
     team.players.remove(worst_player)
     
-    # Add "Problematic" trait to the cut player
-    worst_player.add_trait("Problematic")
+    worst_player.started_season = False
+    if "Reformed" in worst_player.traits:
+        worst_player.traits.pop("Reformed")
+    if "Problematic" not in worst_player.traits:
+        worst_player.add_trait("Problematic")
     
     # Add cut player to free agent pool instead of just cut_players list
     free_agent_pool.append(worst_player)
@@ -997,7 +1000,8 @@ def cut_and_replace_player(team):
         print(f"Adding a new beer league player {replacement_player.player_name} to {team.name} as {replacement_player.position}")
     else:
         # Update replacement player to take the position of the cut player or a suitable position
-        replacement_player.position = position
+        replacement_player.started_season = False
+        replacement_player.update_position(position)
         print(f"Adding cut/drafted player {replacement_player.player_name} to {team.name} as {replacement_player.position}")
     team.add_player(replacement_player)
 
