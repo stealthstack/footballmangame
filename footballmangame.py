@@ -53,20 +53,22 @@ POSITION_COUNTS = {"QB": 1, "RB": 1, "WR": 2, "DL": 2, "Safety": 1, "Kicker": 1}
 
 # Define ANSI color codes for traits
 TRAIT_COLORS = {
-    "Problematic": "\033[91m",  # Red
-    "Hometown Hero": "\033[92m",  # Green
-    "Challenger": "\033[92m",  # Green
-    "Optimist": "\033[92m",  # Green
-    "Star Player": "\033[94m",  # Light Blue
-    "Medalist": "\033[94m",  # Light Blue
-    "Team Captain": "\033[94m",  # Light Blue
+    "Problematic": "\033[91m",      # Red
+    "Hometown Hero": "\033[92m",    # Green
+    "Challenger": "\033[92m",       # Green
+    "Optimist": "\033[92m",         # Green
+    "Star Player": "\033[94m",      # Light Blue
+    "Medalist": "\033[94m",         # Light Blue
+    "Team Captain": "\033[94m",     # Light Blue
     "Hall of Fame": "\033[38;5;208m",  # Orange
+    "Reformed": "\033[93m",         # Yellow
 }
 
 GREEN_TRAITS = {"Hometown Hero", "Challenger", "Optimist"}
 LIGHT_BLUE_TRAITS = {"Star Player", "Medalist", "Team Captain"}
 RED_TRAITS = {"Problematic"}
 ORANGE_TRAITS = {"Hall of Fame"}
+YELLOW_TRAITS = {"Reformed"}
 
 TRAIT_DESCRIPTIONS = {
     "Problematic": "This player has been cut from a team and may pose issues.",
@@ -76,7 +78,8 @@ TRAIT_DESCRIPTIONS = {
     "Medalist": "This player gains bonus points based on medals.",
     "Optimist": "This player keeps a positive mindset, enhancing performance overall.",
     "Team Captain": "The team leader who provides consistent bonuses.",
-    "Hall of Fame": "A legendary player who has reached the pinnacle of excellence.",  # Add this line
+    "Hall of Fame": "A legendary player who has reached the pinnacle of excellence.",
+    "Reformed": "Once a liability, now a cornerstone. This player turned it around.",
 }
 
 TRAIT_SCORE_MODIFIERS = {
@@ -86,7 +89,8 @@ TRAIT_SCORE_MODIFIERS = {
     "Optimist": 5,
     "Star Player": 10,
     "Team Captain": 5,
-    "Hall of Fame": 20,  # Add this line
+    "Hall of Fame": 20,
+    "Reformed": 10,
 }
 
 POSITIVE_TRAITS = ["Hometown Hero", "Challenger"]
@@ -122,6 +126,7 @@ class Player:
         self.home = False
         self.nfl_team = None
         self.hof_news_shown = False
+        self.started_season = False
         
     def update_position(self, new_position):
         """Handle position changes and trait management"""
@@ -755,7 +760,7 @@ def free_agent_draft(teams):
     if not any_players_to_draft:
         print("Skipping Free Agent Draft - no players eligible.")
 
-def draft_players_if_applicable(teams):
+def draft_players_if_applicable(teams, silent=False):
     """Handle player drafting and replacements - CONSOLIDATED VERSION"""
     global drafted_players, free_agent_pool
 
@@ -771,7 +776,7 @@ def draft_players_if_applicable(teams):
             replacement_position = player.position
 
             # Human-controlled team
-            if team == human_team:
+            if team == human_team and not silent:
                 print(f"\n🚨 EMERGENCY SIGNING: {player.player_name} was drafted to the NFL!")
                 print(f"Position needing replacement: {replacement_position}")
 
@@ -790,14 +795,16 @@ def draft_players_if_applicable(teams):
 
                 new_player = add_random_player_to_team(team, replacement_position)
                 team.add_player(new_player)
-                print(f"Auto-signed beer league player {new_player.player_name} (Score: {new_player.score})")
+                if not silent:
+                    print(f"Auto-signed beer league player {new_player.player_name} (Score: {new_player.score})")
                 signings.append((player, new_player, team))
 
-            # AI teams automatically sign beer league players
+            # AI teams (or silent mode for any team)
             else:
                 new_player = add_random_player_to_team(team, replacement_position)
                 team.add_player(new_player)
-                print(f"New player {new_player.player_name} has joined the {team} from the local beer league as a {new_player.position}!")
+                if not silent:
+                    print(f"New player {new_player.player_name} has joined the {team} from the local beer league as a {new_player.position}!")
                 signings.append((player, new_player, team))
 
     return signings
@@ -847,27 +854,45 @@ def knockout_round(teams, round_name):
     """Simulate knockout round"""
     next_round_teams = []
     round_matchups = [(teams[i], teams[i + 1]) for i in range(0, len(teams), 2)]
-    
-    print(f"\n{round_name}")
-    print("-" * len(round_name))
-    
+
+    print(f"\n{'━' * 52}")
+    print(f"  🏈  {round_name.upper()}")
+    print(f"{'━' * 52}")
+    for i, (team1, team2) in enumerate(round_matchups):
+        print(f"  Match {i + 1}:  {team1}  vs  {team2}")
+    input(f"\n  Press Enter to simulate {round_name}...")
+    print()
+
     for i, (team1, team2) in enumerate(round_matchups):
         winner, loser = simulate_game(team1, team2, must_have_winner=True)
         next_round_teams.append(winner)
-        print(f"Match {i+1}: {team1} vs {team2} - Winner: {winner}")
-        
-        if not winner:  # Ensure there's no leftover None value
-            raise RuntimeError(
-                "Failed to determine a winner in a knockout match.")
+
+        if not winner:
+            raise RuntimeError("Failed to determine a winner in a knockout match.")
+
+        print(f"  Match {i + 1}:  {team1}  vs  {team2}  ➜  {winner} advances!")
+        highlight, player, score_increase, new_trait = generate_highlight(winner, loser, show_improvements=False)
+        print(f"  📺  {highlight}")
+
+    print(f"\n{'━' * 52}")
+    print("  Advancing:")
+    for team in next_round_teams:
+        print(f"    ✔  {team}")
+    print(f"{'━' * 52}")
+    input("\n  Press Enter to continue...")
 
     return next_round_teams
 
 
 def championship_match(team1, team2, season_number):
-    print("\nSeason Championship Game!")
-    print("-------------------------")
+    print(f"\n{'━' * 52}")
+    print(f"  🏆  SEASON {season_number} CHAMPIONSHIP")
+    print(f"{'━' * 52}")
+    print(f"\n  {team1}  vs  {team2}")
+    input("\n  Press Enter to simulate the Championship...")
     winner, loser = simulate_game(team1, team2, must_have_winner=True)
-    print(f"Championship Match: {team1} vs {team2} - Winner: {winner}")
+    print(f"\n  ➜  {winner} are your Season {season_number} Champions!")
+    print(f"{'━' * 52}")
     trophy_name = f"Season {season_number} Trophy"
     winner.award_trophy(trophy_name)
     winner.add_first_place(season_number)
@@ -902,9 +927,8 @@ def championship_match(team1, team2, season_number):
         else:
             chosen_player.add_trait("Medalist")
 
-    # Generate a highlight for the championship game with a larger score increase
     highlight, player, score_increase, new_trait = generate_highlight(winner, loser, is_championship=True, show_improvements=False)
-    print(f"Championship Highlight: {highlight}")
+    print(f"\n  📺  {highlight}")
     return winner
 
 def reset_teams_for_new_season(teams):
@@ -923,6 +947,8 @@ def reset_teams_for_new_season(teams):
         team.current_streak = 0
         team.playoff_bubble_shown = False
         team.playoff_secured_shown = False
+        for player in team.players:
+            player.started_season = True
 
 
 def identify_worst_teams(teams, num_worst_teams=2):
@@ -1279,6 +1305,9 @@ def main():
     free_agent_pool = []
     season_number = 1
     teams = generate_teams()
+    for team in teams:
+        for player in team.players:
+            player.started_season = True
     drafted_players = []
     generate_initial_free_agents()
     all_drafted_players = []
@@ -1423,23 +1452,36 @@ def main():
         remove_temporary_players(teams)
 
         top_teams = get_top_teams(teams)
-        print("End of Regular Season.")
-        all_drafted_players.extend(player for player in drafted_players if player not in all_drafted_players)  # Ensure no duplicates
-        print("Top 8 Teams:")
+        all_drafted_players.extend(player for player in drafted_players if player not in all_drafted_players)
+
+        print(f"\n{'━' * 52}")
+        print(f"  End of Regular Season — Playoff Bracket")
+        print(f"{'━' * 52}")
         for i, team in enumerate(top_teams):
-            print(f"{i + 1}. {team}")
+            print(f"  {i + 1}.  {team}")
+        print(f"{'━' * 52}")
+        input("\n  Press Enter to begin the Playoffs...")
 
         semifinal_teams = knockout_round(top_teams, "Quarterfinals")
         final_teams = knockout_round(semifinal_teams, "Semifinals")
         champion = championship_match(final_teams[0], final_teams[1], season_number)
+
+        draft_players_if_applicable(teams, silent=True)
+
+        for team in teams:
+            for player in list(team.players):
+                if "Problematic" in player.traits and player.started_season:
+                    player.traits.pop("Problematic")
+                    player.add_trait("Reformed")
+                    yellow = TRAIT_COLORS["Reformed"]
+                    print(f"\n  {yellow}✨ {player.player_name} has Reformed after a full season with {team}.{reset_color()}")
 
         eligible = [t for t in teams if not t.rebrand_immunity]
         worst_teams_previous_season = identify_worst_teams(eligible, num_worst_teams=2)
         for team in teams:
             team.rebrand_immunity = False
 
-        print(f"\nCongratulations to {champion} for winning the Season {season_number} Trophy!")
-        input("Press Enter to continue to the next season...")
+        input("\n  Press Enter to continue to the next season...")
         season_number += 1
 
 if __name__ == "__main__":
