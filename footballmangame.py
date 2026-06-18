@@ -22,10 +22,10 @@ ANIMAL_OBJECT_NAMES = [
 ]
 
 PLAYER_NAMES = [
-    "Tom", "Julio", "Aaron", "Patrick", "Derrick", "DeAndre", "Christian",
+    "Oliver", "Tree", "Tom", "Julio", "Aaron", "Patrick", "Derrick",
     "Travis", "Michael", "Tyreek", "Dalvin", "Stefon", "Alvin", "George",
     "Josh", "Justin", "Jordan", "Jaylen", "Kevin", "Kyrie", "Kyle", "Karl",
-    "Kobe", "Jamin", "James", "Jason", "Jayson", "Jay", "Colby", "Cole",
+    "Kobe", "Jamin", "James", "Jason", "DeAndre", "Jay", "Colby", "Cole",
     "Cody", "Cameron", "Cam", "Clay", "Chris", "Chase", "Chad", "Blake",
     "Brad", "Bradley", "Brett", "Bryce", "Bryan", "Bryant", "Bryson",
     "Alex", "Carl", "Carlos", "Carlton", "Eric", "Eddie", "Edward",
@@ -39,7 +39,7 @@ PLAYER_NAMES = [
     "Owen", "Pat", "Randy", "Randall", "Scott", "Sean", "Shawn", "Steve",
     "Steven", "Terry", "Tim", "Timothy", "Tyler", "Ty", "Tyrone", "Ulysses",
     "Victor", "Vincent", "William", "Wilson", "Wesley", "Wes", "Walker",
-    "Xavier", "Xander", "Zach", "Zack", "Zane", "Zackary",
+    "Xavier", "Xander", "Zach", "Zack", "Zane", "Zackary", "Christian",
 ]
 
 # Global variables
